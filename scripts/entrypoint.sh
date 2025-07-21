@@ -38,8 +38,7 @@ if [ "$(id -u)" = "0" ]; then
     
     # Start cron daemon
     log "INFO" "Starting cron daemon"
-    crond -f -L /var/log/cron.log &
-    CRON_PID=$!
+    service cron start
     
     # Switch to cfg2html user for SSH operations
     log "INFO" "Switching to cfg2html user for SSH operations"
@@ -85,11 +84,24 @@ if [ "$RUN_AT_STARTUP" = "true" ]; then
 fi
 
 # Keep container running
-if [ -n "$CRON_PID" ]; then
-    log "INFO" "Container started successfully, waiting for cron process"
-    wait $CRON_PID
+log "INFO" "Container started successfully, keeping alive"
+# Keep the container running by tailing logs or sleeping
+if [ -f /var/log/cfg2html/cfg2html.log ]; then
+    tail -f /var/log/cfg2html/*.log
 else
-    log "INFO" "Container started successfully, keeping alive"
-    # Keep the container running by tailing logs
-    tail -f /var/log/cfg2html/*.log 2>/dev/null || sleep infinity
+    # Create initial log file and tail it
+    touch /var/log/cfg2html/container.log
+    echo "Container is running and waiting for scheduled jobs..." > /var/log/cfg2html/container.log
+    tail -f /var/log/cfg2html/container.log &
+    
+    # Keep checking for cron process
+    while true; do
+        if pgrep cron > /dev/null; then
+            sleep 60
+        else
+            log "WARN" "Cron process not found, restarting..."
+            service cron start
+            sleep 10
+        fi
+    done
 fi

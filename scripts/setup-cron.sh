@@ -11,15 +11,11 @@ log() {
 
 log "INFO" "Setting up cron schedule"
 
-# Create cron job
+# Create cron job for cfg2html user
 CRON_USER="cfg2html"
-CRON_FILE="/var/spool/cron/crontabs/$CRON_USER"
 
-# Ensure cron directory exists
-mkdir -p /var/spool/cron/crontabs
-
-# Create cron job content
-cat > "$CRON_FILE" << EOF
+# Write cron job to cfg2html user's crontab
+cat << EOF | crontab -u $CRON_USER -
 # cfg2html execution schedule
 # Run at specified time (default: 2am every Monday)
 $CRON_SCHEDULE /app/scripts/run-cfg2html.sh >> /var/log/cfg2html/cron.log 2>&1
@@ -29,11 +25,9 @@ $CRON_SCHEDULE /app/scripts/run-cfg2html.sh >> /var/log/cfg2html/cron.log 2>&1
 
 EOF
 
-# Set proper permissions
-chmod 600 "$CRON_FILE"
-if command -v chown >/dev/null 2>&1; then
-    chown "$CRON_USER:$CRON_USER" "$CRON_FILE" 2>/dev/null || true
-fi
-
 log "INFO" "Cron schedule configured: $CRON_SCHEDULE"
 log "INFO" "Cron job will execute: /app/scripts/run-cfg2html.sh"
+
+# Make sure cron can write to log directory
+chown -R cfg2html:cfg2html /var/log/cfg2html
+chmod 755 /var/log/cfg2html

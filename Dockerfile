@@ -1,33 +1,32 @@
-FROM alpine:3.18
+FROM ubuntu:22.04
 
-# Update package index and install required packages
-RUN apk update && apk add --no-cache \
-    bash \
+# Set environment to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update package list and install required packages
+RUN apt-get update && apt-get install -y \
     curl \
+    wget \
     openssh-client \
     sshpass \
-    dcron \
+    cron \
     tzdata \
-    coreutils \
-    grep \
-    sed \
-    gawk \
     gzip \
     tar \
     findutils \
     procps \
-    util-linux \
-    shadow \
-    ca-certificates
+    sudo \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create user for running the application
-RUN addgroup -g 1000 cfg2html && \
-    adduser -D -u 1000 -G cfg2html cfg2html
+RUN groupadd -g 1000 cfg2html && \
+    useradd -d /home/cfg2html -s /bin/bash -u 1000 -g 1000 cfg2html
 
 # Download and install cfg2html
-RUN curl -L https://github.com/cfg2html/cfg2html/archive/refs/heads/master.tar.gz -o /tmp/cfg2html.tar.gz && \
+RUN wget --no-check-certificate https://github.com/cfg2html/cfg2html/archive/refs/heads/master.tar.gz -O /tmp/cfg2html.tar.gz && \
     tar -xzf /tmp/cfg2html.tar.gz -C /tmp && \
-    mv /tmp/cfg2html-master/linux/cfg2html /usr/local/bin/ && \
+    find /tmp/cfg2html-master -name "cfg2html" -type f -exec cp {} /usr/local/bin/ \; && \
     chmod +x /usr/local/bin/cfg2html && \
     rm -rf /tmp/cfg2html*
 
@@ -43,10 +42,6 @@ COPY scripts/setup-cron.sh /app/scripts/
 # Make scripts executable
 RUN chmod +x /app/scripts/*.sh && \
     chown -R cfg2html:cfg2html /app/scripts
-
-# Set up cron
-RUN mkdir -p /var/spool/cron/crontabs && \
-    touch /var/log/cron.log
 
 # Environment variables with defaults
 ENV TZ=UTC
