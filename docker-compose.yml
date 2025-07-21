@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  cfg2html:
+    build: .
+    # Or use pre-built image:
+    # image: ghcr.io/loryanstrant/cfg2html-docker:latest
+    container_name: cfg2html-docker
+    restart: unless-stopped
+    
+    environment:
+      # Required: Comma-separated list of hosts
+      # Format: hostname[:port][:username][:password_or_keyfile]
+      HOSTS: "192.168.1.10,192.168.1.11:22:admin:password123,192.168.1.12:22:root:/app/keys/server_key"
+      
+      # Optional: SSH configuration
+      SSH_PORT: "22"
+      SSH_USER: "root"
+      SSH_PASS: "defaultpassword"
+      
+      # Optional: Timezone (default: UTC)
+      TZ: "America/New_York"
+      
+      # Optional: Cron schedule (default: 0 2 * * 1 = 2am every Monday)
+      CRON_SCHEDULE: "0 2 * * 1"
+      
+      # Optional: Run at startup (default: true)
+      RUN_AT_STARTUP: "true"
+      
+      # Optional: Output directory inside container (default: /app/output)
+      OUTPUT_DIR: "/app/output"
+      
+      # Optional: Log level (default: INFO)
+      LOG_LEVEL: "INFO"
+    
+    volumes:
+      # Mount output directory to host
+      - ./output:/app/output
+      
+      # Optional: Mount SSH keys directory
+      - ./ssh-keys:/app/keys:ro
+      
+      # Optional: Mount logs directory
+      - ./logs:/var/log/cfg2html
+    
+    # Run as non-root user for security
+    user: "1000:1000"
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+# Optional: Create networks for isolation
+networks:
+  default:
+    name: cfg2html-network
