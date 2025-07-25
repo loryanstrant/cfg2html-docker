@@ -1,0 +1,36 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Output directories
+output/
+logs/
+ssh-keys/
+
+# Docker volumes
+data/
+
+# Temporary files
+*.tmp
+*.log
+*.pid
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Archive files
+*.tar.gz
+*.zip
+*.rar
+
+# Test files
+test-*
