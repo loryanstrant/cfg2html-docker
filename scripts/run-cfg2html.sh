@@ -27,6 +27,188 @@ parse_host_config() {
     fi
 }
 
+# Detect remote Linux distribution
+detect_remote_distro() {
+    local ssh_cmd="$1"
+    local auth_method="$2"
+    local user_host="$3"
+    
+    log "INFO" "Detecting Linux distribution on $HOST_IP"
+    
+    # Try to get distribution info
+    local distro_info
+    if distro_info=$($ssh_cmd $auth_method "$user_host" "cat /etc/os-release 2>/dev/null | grep '^ID=' | cut -d'=' -f2 | tr -d '\"'" 2>/dev/null); then
+        echo "$distro_info"
+        return 0
+    fi
+    
+    # Fallback: try other methods
+    if distro_info=$($ssh_cmd $auth_method "$user_host" "lsb_release -si 2>/dev/null | tr '[:upper:]' '[:lower:]'" 2>/dev/null); then
+        echo "$distro_info"
+        return 0
+    fi
+    
+    # Last resort: check for package managers
+    if $ssh_cmd $auth_method "$user_host" "which apt-get >/dev/null 2>&1" 2>/dev/null; then
+        echo "debian"
+        return 0
+    elif $ssh_cmd $auth_method "$user_host" "which yum >/dev/null 2>&1" 2>/dev/null; then
+        echo "rhel"
+        return 0
+    elif $ssh_cmd $auth_method "$user_host" "which dnf >/dev/null 2>&1" 2>/dev/null; then
+        echo "fedora"
+        return 0
+    fi
+    
+    log "WARN" "Could not detect distribution on $HOST_IP, assuming generic Linux"
+    echo "unknown"
+    return 0
+}
+
+# Check if cfg2html is installed and get version
+check_cfg2html_status() {
+    local ssh_cmd="$1"
+    local auth_method="$2"
+    local user_host="$3"
+    
+    log "INFO" "Checking cfg2html installation status on $HOST_IP"
+    
+    # Check if cfg2html is installed
+    if ! $ssh_cmd $auth_method "$user_host" "which cfg2html >/dev/null 2>&1" 2>/dev/null; then
+        log "INFO" "cfg2html not found on $HOST_IP"
+        return 1
+    fi
+    
+    # Get current version
+    local current_version
+    if current_version=$($ssh_cmd $auth_method "$user_host" "cfg2html -v 2>/dev/null | head -1 | grep -o '[0-9]\+\.[0-9]\+[^ ]*' | head -1" 2>/dev/null); then
+        log "INFO" "Found cfg2html version $current_version on $HOST_IP"
+        echo "$current_version"
+        return 0
+    fi
+    
+    log "INFO" "cfg2html found but version could not be determined on $HOST_IP"
+    echo "unknown"
+    return 0
+}
+
+# Get latest cfg2html version from GitHub
+get_latest_cfg2html_version() {
+    log "INFO" "Checking for latest cfg2html version"
+    
+    # Try to get latest version from GitHub API
+    local latest_version
+    if command -v curl >/dev/null 2>&1; then
+        latest_version=$(curl -s https://api.github.com/repos/cfg2html/cfg2html/releases/latest | grep '"tag_name"' | cut -d'"' -f4 2>/dev/null)
+    elif command -v wget >/dev/null 2>&1; then
+        latest_version=$(wget -qO- https://api.github.com/repos/cfg2html/cfg2html/releases/latest | grep '"tag_name"' | cut -d'"' -f4 2>/dev/null)
+    fi
+    
+    if [ -n "$latest_version" ] && [ "$latest_version" != "null" ]; then
+        log "INFO" "Latest cfg2html version: $latest_version"
+        echo "$latest_version"
+        return 0
+    fi
+    
+    # Fallback: assume we need to install/update
+    log "WARN" "Could not determine latest cfg2html version, will install from master branch"
+    echo "master"
+    return 0
+}
+
+# Install cfg2html on remote system
+install_cfg2html() {
+    local ssh_cmd="$1"
+    local auth_method="$2"
+    local user_host="$3"
+    local distro="$4"
+    
+    log "INFO" "Installing cfg2html on $HOST_IP (distro: $distro)"
+    
+    # First try package manager installation
+    case "$distro" in
+        ubuntu|debian)
+            log "INFO" "Attempting package installation via apt on $HOST_IP"
+            if $ssh_cmd $auth_method "$user_host" "sudo apt-get update && sudo apt-get install -y cfg2html" 2>/dev/null; then
+                log "INFO" "Successfully installed cfg2html via apt on $HOST_IP"
+                return 0
+            fi
+            log "WARN" "Package installation failed, trying manual installation on $HOST_IP"
+            ;;
+        rhel|centos|rocky|almalinux)
+            log "INFO" "Attempting package installation via yum on $HOST_IP"
+            if $ssh_cmd $auth_method "$user_host" "sudo yum update -y && sudo yum install -y cfg2html" 2>/dev/null; then
+                log "INFO" "Successfully installed cfg2html via yum on $HOST_IP"
+                return 0
+            fi
+            log "WARN" "Package installation failed, trying manual installation on $HOST_IP"
+            ;;
+        fedora)
+            log "INFO" "Attempting package installation via dnf on $HOST_IP"
+            if $ssh_cmd $auth_method "$user_host" "sudo dnf update -y && sudo dnf install -y cfg2html" 2>/dev/null; then
+                log "INFO" "Successfully installed cfg2html via dnf on $HOST_IP"
+                return 0
+            fi
+            log "WARN" "Package installation failed, trying manual installation on $HOST_IP"
+            ;;
+    esac
+    
+    # Manual installation from GitHub
+    log "INFO" "Attempting manual installation from GitHub on $HOST_IP"
+    local install_script='
+        set -e
+        cd /tmp
+        wget --no-check-certificate https://github.com/cfg2html/cfg2html/archive/refs/heads/master.tar.gz -O cfg2html.tar.gz 2>/dev/null || curl -L https://github.com/cfg2html/cfg2html/archive/refs/heads/master.tar.gz -o cfg2html.tar.gz 2>/dev/null
+        tar -xzf cfg2html.tar.gz
+        cd cfg2html-master
+        find . -name "cfg2html" -type f -executable | head -1 | xargs -I {} sudo cp {} /usr/local/bin/cfg2html
+        sudo chmod +x /usr/local/bin/cfg2html
+        cd /tmp
+        rm -rf cfg2html*
+        echo "cfg2html manual installation completed"
+    '
+    
+    if $ssh_cmd $auth_method "$user_host" "$install_script" 2>/dev/null; then
+        log "INFO" "Successfully installed cfg2html manually on $HOST_IP"
+        return 0
+    fi
+    
+    log "ERROR" "Failed to install cfg2html on $HOST_IP"
+    return 1
+}
+
+# Ensure cfg2html is installed and up to date
+ensure_cfg2html_installed() {
+    local ssh_cmd="$1"
+    local auth_method="$2"
+    local user_host="$3"
+    
+    # Detect distribution
+    local distro
+    distro=$(detect_remote_distro "$ssh_cmd" "$auth_method" "$user_host")
+    
+    # Check current installation status
+    local current_version
+    if current_version=$(check_cfg2html_status "$ssh_cmd" "$auth_method" "$user_host"); then
+        if [ "$current_version" = "" ]; then
+            # Not installed
+            log "INFO" "cfg2html not installed on $HOST_IP, installing..."
+            install_cfg2html "$ssh_cmd" "$auth_method" "$user_host" "$distro"
+            return $?
+        else
+            # Already installed - for now, we'll assume it's good enough
+            # In future versions, we could add version comparison logic
+            log "INFO" "cfg2html already installed on $HOST_IP (version: $current_version)"
+            return 0
+        fi
+    else
+        # Not installed
+        log "INFO" "cfg2html not installed on $HOST_IP, installing..."
+        install_cfg2html "$ssh_cmd" "$auth_method" "$user_host" "$distro"
+        return $?
+    fi
+}
+
 # Execute cfg2html on remote host
 execute_cfg2html() {
     local host_config="$1"
@@ -67,6 +249,14 @@ execute_cfg2html() {
         local archive_name="${existing_file%.*}_archived_${timestamp}.html"
         log "INFO" "Archiving previous output: $(basename "$existing_file") -> $(basename "$archive_name")"
         mv "$existing_file" "$archive_name"
+    fi
+    
+    # Ensure cfg2html is installed before execution
+    log "INFO" "Ensuring cfg2html is installed on $HOST_IP"
+    if ! ensure_cfg2html_installed "$ssh_cmd" "$auth_method" "$HOST_USER@$HOST_IP"; then
+        log "ERROR" "Failed to ensure cfg2html installation on $HOST_IP"
+        rm -f "$temp_output"
+        return 1
     fi
     
     log "INFO" "Executing cfg2html on $HOST_IP"
