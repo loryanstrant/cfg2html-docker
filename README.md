@@ -20,6 +20,7 @@ cfg2html is a UNIX shell script similar to supportinfo, getsysinfo or prtconf on
 - 🕐 **Timezone Support**: Configurable timezone settings
 - 📊 **Logging**: Comprehensive logging and error handling
 - 🔒 **Security**: Runs as non-root user with configurable permissions
+- ⚡ **Auto-Installation**: Automatically installs cfg2html on remote hosts if needed
 
 ## Quick Start
 
@@ -68,6 +69,45 @@ docker run -d \
   -e TZ="America/New_York" \
   -v $(pwd)/output:/app/output \
   ghcr.io/loryanstrant/cfg2html-docker:latest
+```
+
+## cfg2html Auto-Installation
+
+The container automatically handles cfg2html installation on remote hosts, eliminating the need to pre-install it manually.
+
+### How It Works
+
+When connecting to a remote host, the container will:
+
+1. **Detect Distribution**: Automatically identifies the Linux distribution (Ubuntu/Debian, RHEL/CentOS, Fedora, etc.)
+2. **Check Installation**: Verifies if cfg2html is already installed and gets version information
+3. **Install if Needed**: Uses the appropriate package manager to install cfg2html:
+   - Ubuntu/Debian: `apt-get install cfg2html`
+   - RHEL/CentOS: `yum install cfg2html` 
+   - Fedora: `dnf install cfg2html`
+4. **Fallback Installation**: If package managers fail, downloads and installs from GitHub source
+5. **Execute**: Runs cfg2html and collects the system documentation
+
+### Supported Distributions
+
+- ✅ Ubuntu/Debian (using apt)
+- ✅ RHEL/CentOS/Rocky/AlmaLinux (using yum)
+- ✅ Fedora (using dnf)
+- ✅ Generic Linux (manual installation from source)
+
+### Installation Logging
+
+The installation process is fully logged for troubleshooting:
+
+```
+[2025-07-25 23:50:01] [INFO] Ensuring cfg2html is installed on 192.168.1.10
+[2025-07-25 23:50:01] [INFO] Detecting Linux distribution on 192.168.1.10
+[2025-07-25 23:50:02] [INFO] Detected distribution: ubuntu
+[2025-07-25 23:50:02] [INFO] Checking cfg2html installation status on 192.168.1.10
+[2025-07-25 23:50:03] [INFO] cfg2html not found on 192.168.1.10
+[2025-07-25 23:50:03] [INFO] Installing cfg2html on 192.168.1.10 (distro: ubuntu)
+[2025-07-25 23:50:04] [INFO] Attempting package installation via apt on 192.168.1.10
+[2025-07-25 23:50:15] [INFO] Successfully installed cfg2html via apt on 192.168.1.10
 ```
 
 ## Configuration
@@ -268,13 +308,19 @@ docker exec cfg2html-docker ps aux | grep cron
    ```
 
 3. **Missing cfg2html Output**
+   
+   The container now automatically installs cfg2html if it's missing. If you still encounter issues:
+   
    ```bash
-   # Check if cfg2html is installed on remote host
+   # Check the installation logs
+   docker exec cfg2html-docker tail -f /var/log/cfg2html/cfg2html.log
+   
+   # Manually verify cfg2html installation on remote host
    ssh user@hostname "which cfg2html"
    
-   # Install cfg2html on remote host
-   ssh user@hostname "sudo apt-get install cfg2html"  # Ubuntu/Debian
-   ssh user@hostname "sudo yum install cfg2html"      # RHEL/CentOS
+   # Test manual installation (the container does this automatically now)
+   ssh user@hostname "sudo apt-get update && sudo apt-get install -y cfg2html"  # Ubuntu/Debian
+   ssh user@hostname "sudo yum install -y cfg2html"      # RHEL/CentOS
    ```
 
 ### Debug Mode
