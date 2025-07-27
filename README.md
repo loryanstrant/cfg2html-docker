@@ -4,6 +4,8 @@ A Docker solution that executes cfg2html on multiple Linux hosts via SSH, provid
 
 [![Docker Build](https://github.com/loryanstrant/cfg2html-docker/actions/workflows/docker-build.yml/badge.svg)](https://github.com/loryanstrant/cfg2html-docker/actions/workflows/docker-build.yml)
 [![Docker Image](https://ghcr-badge.egpl.dev/loryanstrant/cfg2html-docker/latest_tag?color=%2344cc11&ignore=latest&label=Docker%20Image&trim=)](https://github.com/loryanstrant/cfg2html-docker/pkgs/container/cfg2html-docker)
+[![Security Scan](https://img.shields.io/badge/security-scanned-brightgreen.svg)](https://github.com/loryanstrant/cfg2html-docker/security)
+[![Multi-Platform](https://img.shields.io/badge/platform-linux%2Famd64%20%7C%20linux%2Farm64-blue.svg)](https://github.com/loryanstrant/cfg2html-docker/pkgs/container/cfg2html-docker)
 
 ## Overview
 
@@ -21,6 +23,10 @@ cfg2html is a UNIX shell script similar to supportinfo, getsysinfo or prtconf on
 - 📊 **Logging**: Comprehensive logging and error handling
 - 🔒 **Security**: Runs as non-root user with configurable permissions
 - ⚡ **Auto-Installation**: Automatically installs cfg2html on remote hosts if needed
+- 💪 **Multi-Platform**: Supports linux/amd64 and linux/arm64 architectures
+- 🛡️ **Security Scanning**: Automated vulnerability scanning with Trivy
+- ✅ **Health Monitoring**: Built-in health checks for container monitoring
+- 🔧 **CI/CD Ready**: Comprehensive GitHub Actions workflow with automated testing
 
 ## Quick Start
 
@@ -340,6 +346,39 @@ docker exec cfg2html-docker /app/scripts/run-cfg2html.sh
 
 # Test SSH connection
 docker exec -it cfg2html-docker ssh user@hostname
+```
+
+## Development and CI/CD
+
+### Automated Workflows
+
+The repository includes comprehensive GitHub Actions workflows for:
+
+- **Build and Push**: Automatically builds multi-platform Docker images and pushes to GHCR
+- **Security Scanning**: Uses Trivy for vulnerability scanning
+- **Multi-Platform Testing**: Validates images work on both AMD64 and ARM64 architectures
+- **Comprehensive Testing**: Runs container functionality tests including health checks
+
+### Manual Workflow Dispatch
+
+You can manually trigger the build workflow:
+
+1. Go to the **Actions** tab in the GitHub repository
+2. Select the **Build and Push Docker Image** workflow
+3. Click **Run workflow** and choose your environment:
+   - `test`: For testing builds
+   - `staging`: For staging deployments  
+   - `production`: For production releases
+
+### Running Tests Locally
+
+```bash
+# Run the comprehensive test suite
+./test.sh
+
+# Build and test manually
+docker build -t cfg2html-docker-local .
+docker run --rm -e HOSTS="127.0.0.1" -e RUN_AT_STARTUP="false" cfg2html-docker-local echo "Test passed"
 ```
 
 ## Building from Source

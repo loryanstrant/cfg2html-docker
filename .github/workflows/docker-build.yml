@@ -11,6 +11,17 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: false
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - staging
+          - production
 
 env:
   REGISTRY: ghcr.io
@@ -63,10 +74,101 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Test Docker image
-        if: github.event_name == 'pull_request'
         run: |
-          docker build -t test-image .
-          docker run --rm -e HOSTS="127.0.0.1" -e RUN_AT_STARTUP="false" test-image echo "Container starts successfully"
+          # Determine the image tag to test
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, build locally and test
+            echo "Building test image for PR..."
+            docker build -t test-image .
+            IMAGE_TAG="test-image"
+          else
+            # For push events, use the built and pushed image
+            IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
+            echo "Testing pushed image: $IMAGE_TAG"
+          fi
+          
+          # Run the comprehensive test suite (modified for CI)
+          echo "Running comprehensive test suite..."
+          
+          # Test 1: Basic build and cfg2html availability
+          echo "Test 1: cfg2html installation test..."
+          if docker run --rm --entrypoint="" $IMAGE_TAG which cfg2html > /dev/null; then
+            echo "✅ cfg2html is installed"
+          else
+            echo "❌ cfg2html not found"
+            exit 1
+          fi
+
+          # Test 2: Required tools test
+          echo "Test 2: Required tools test..."
+          tools_missing=0
+          for tool in ssh sshpass cron su; do
+            if ! docker run --rm --entrypoint="" $IMAGE_TAG which $tool > /dev/null 2>&1; then
+              echo "❌ $tool not found"
+              tools_missing=1
+            fi
+          done
+          
+          if [ $tools_missing -eq 0 ]; then
+            echo "✅ All required tools are available"
+          else
+            exit 1
+          fi
+
+          # Test 3: Environment validation
+          echo "Test 3: Environment validation test..."
+          if docker run --rm $IMAGE_TAG timeout 5 /app/scripts/entrypoint.sh 2>&1 | grep -q "HOSTS environment variable is required"; then
+            echo "✅ Environment validation works"
+          else
+            echo "❌ Environment validation failed"
+            exit 1
+          fi
+
+          # Test 4: Script permissions
+          echo "Test 4: Script permissions test..."
+          scripts_ok=0
+          for script in entrypoint.sh run-cfg2html.sh setup-cron.sh; do
+            if docker run --rm --entrypoint="" $IMAGE_TAG test -x /app/scripts/$script; then
+              scripts_ok=$((scripts_ok + 1))
+            else
+              echo "❌ $script is not executable"
+            fi
+          done
+          
+          if [ $scripts_ok -eq 3 ]; then
+            echo "✅ All scripts have proper permissions"
+          else
+            exit 1
+          fi
+
+          # Test 5: Container health and startup
+          echo "Test 5: Container health check..."
+          docker run --name health-test -d \
+            -e HOSTS="127.0.0.1" \
+            -e RUN_AT_STARTUP="false" \
+            -e LOG_LEVEL="DEBUG" \
+            $IMAGE_TAG
+          
+          # Wait for container to initialize
+          sleep 5
+          
+          # Check if container is running
+          if docker ps | grep -q health-test; then
+            echo "✅ Container health check passed"
+          else
+            echo "❌ Container health check failed"
+            docker logs health-test
+            docker stop health-test 2>/dev/null || true
+            docker rm health-test 2>/dev/null || true
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop health-test
+          docker rm health-test
+          
+          echo ""
+          echo "🎉 All tests passed! cfg2html-docker is ready for use."
 
   security-scan:
     runs-on: ubuntu-latest
@@ -86,3 +188,33 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
+
+  multi-arch-test:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name != 'pull_request'
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test multi-platform image
+        run: |
+          PLATFORM="${{ matrix.platform }}"
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+          
+          echo "Testing platform: $PLATFORM"
+          
+          # Pull the specific platform image
+          docker pull --platform=$PLATFORM $IMAGE_REF
+          
+          # Basic functionality test
+          docker run --rm --platform=$PLATFORM --entrypoint="" $IMAGE_REF which cfg2html
+          
+          echo "✅ $PLATFORM image works correctly"

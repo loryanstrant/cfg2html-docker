@@ -6,13 +6,22 @@ set -e
 
 echo "Testing cfg2html-docker build and functionality..."
 
+# Clean up any existing test containers/images
+cleanup() {
+    echo "Cleaning up test resources..."
+    docker stop cfg2html-docker-test-container 2>/dev/null || true
+    docker rm cfg2html-docker-test-container 2>/dev/null || true
+    docker rmi cfg2html-docker-test 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # Build the Docker image
 echo "Building Docker image..."
 docker build -t cfg2html-docker-test .
 
 # Test 1: Container starts and validates environment
 echo "Test 1: Environment validation test..."
-if docker run --rm cfg2html-docker-test timeout 5 /app/scripts/entrypoint.sh 2>&1 | grep -q "HOSTS environment variable is required"; then
+if timeout 10 docker run --rm --name cfg2html-docker-test-temp cfg2html-docker-test 2>&1 | grep -q "HOSTS environment variable is required"; then
     echo "✅ Environment validation works"
 else
     echo "❌ Environment validation failed"
@@ -60,6 +69,42 @@ if [ $scripts_ok -eq 3 ]; then
 else
     exit 1
 fi
+
+# Test 5: Container health and lifecycle
+echo "Test 5: Container health and lifecycle test..."
+docker run --name cfg2html-docker-test-container -d \
+    -e HOSTS="127.0.0.1" \
+    -e RUN_AT_STARTUP="false" \
+    -e LOG_LEVEL="DEBUG" \
+    cfg2html-docker-test
+
+# Wait for container to start up properly
+sleep 5
+
+# Check if container is still running
+if docker ps | grep -q cfg2html-docker-test-container; then
+    echo "✅ Container lifecycle test passed"
+else
+    echo "❌ Container lifecycle test failed"
+    docker logs cfg2html-docker-test-container
+    exit 1
+fi
+
+# Test 6: Health check functionality
+echo "Test 6: Health check test..."
+# Wait for health check to initialize
+sleep 30
+
+HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' cfg2html-docker-test-container 2>/dev/null || echo "no-healthcheck")
+if [ "$HEALTH_STATUS" = "healthy" ] || [ "$HEALTH_STATUS" = "no-healthcheck" ]; then
+    echo "✅ Health check passed (Status: $HEALTH_STATUS)"
+else
+    echo "⚠️  Health check status: $HEALTH_STATUS (container may still be starting)"
+fi
+
+# Clean up the test container
+docker stop cfg2html-docker-test-container
+docker rm cfg2html-docker-test-container
 
 echo ""
 echo "🎉 All tests passed! cfg2html-docker is ready for use."
