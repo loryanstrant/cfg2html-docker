@@ -62,11 +62,59 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Test container health
+        run: |
+          # Test that container can start with required environment variables
+          echo "Testing container health with required HOSTS environment variable..."
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            IMAGE_TAG="cfg2html-docker-test"
+            docker build -t "$IMAGE_TAG" .
+          else
+            IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+          fi
+          
+          # Test container startup with HOSTS variable
+          container_id=$(docker run -d -e HOSTS="dummy:22:user:pass" -e RUN_AT_STARTUP="false" "$IMAGE_TAG")
+          sleep 10
+          
+          # Check if container initialized properly
+          if docker logs "$container_id" 2>&1 | grep -q "Container started successfully"; then
+            echo "✅ Container health check passed"
+          else
+            echo "❌ Container health check failed"
+            echo "Container logs:"
+            docker logs "$container_id" 2>&1
+            docker stop "$container_id" || true
+            docker rm "$container_id" || true
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop "$container_id" || true
+          docker rm "$container_id" || true
+
       - name: Test Docker image
         if: github.event_name == 'pull_request'
         run: |
+          # Run comprehensive test suite
+          ./test.sh
+          
+          # Additional integration test - verify container can run with proper environment
+          echo "Running additional integration test..."
           docker build -t test-image .
-          docker run --rm -e HOSTS="127.0.0.1" -e RUN_AT_STARTUP="false" test-image echo "Container starts successfully"
+          container_id=$(docker run -d -e HOSTS="dummy:22:user:pass" -e RUN_AT_STARTUP="false" test-image)
+          sleep 5
+          if docker logs "$container_id" 2>&1 | grep -q "Container started successfully"; then
+            echo "✅ Integration test passed - container starts and initializes properly"
+          else
+            echo "❌ Integration test failed - container did not initialize properly"
+            docker logs "$container_id" 2>&1
+            docker stop "$container_id" || true
+            docker rm "$container_id" || true
+            exit 1
+          fi
+          docker stop "$container_id" || true
+          docker rm "$container_id" || true
 
   security-scan:
     runs-on: ubuntu-latest
