@@ -61,6 +61,87 @@ else
     exit 1
 fi
 
+# Test 5: Container lifecycle test
+echo "Test 5: Container lifecycle test..."
+container_name="cfg2html-lifecycle-test"
+
+# Clean up any existing container
+docker rm -f $container_name >/dev/null 2>&1 || true
+
+# Run container in detached mode with required HOSTS environment variable
+if docker run -d --name $container_name -e HOSTS="dummy:22:user:pass" -e RUN_AT_STARTUP="false" cfg2html-docker-test; then
+    echo "✅ Container started in detached mode"
+    
+    # Wait a moment for container to initialize
+    sleep 2
+    
+    # Check if container is still running
+    if docker ps | grep $container_name > /dev/null; then
+        echo "✅ Container is running and healthy"
+        
+        # Test that we can execute commands in the running container
+        if docker exec $container_name echo "Health check successful" > /dev/null 2>&1; then
+            echo "✅ Container is responsive to commands"
+        else
+            echo "❌ Container is not responsive to commands"
+            echo "Container logs:"
+            docker logs $container_name
+            docker rm -f $container_name >/dev/null 2>&1
+            exit 1
+        fi
+    else
+        echo "❌ Container stopped unexpectedly"
+        echo "Container logs:"
+        docker logs $container_name
+        docker rm -f $container_name >/dev/null 2>&1
+        exit 1
+    fi
+    
+    # Clean up
+    docker rm -f $container_name >/dev/null 2>&1
+else
+    echo "❌ Failed to start container in detached mode"
+    echo "Container logs:"
+    docker logs $container_name 2>/dev/null || echo "No logs available"
+    docker rm -f $container_name >/dev/null 2>&1
+    exit 1
+fi
+
+# Test 6: Container health check without startup run
+echo "Test 6: Container health check (no startup run)..."
+container_name="cfg2html-health-test"
+
+# Clean up any existing container
+docker rm -f $container_name >/dev/null 2>&1 || true
+
+# Run container with startup disabled to test pure health
+if docker run -d --name $container_name -e HOSTS="test.example.com:22:testuser:testpass" -e RUN_AT_STARTUP="false" cfg2html-docker-test; then
+    # Wait for container to stabilize
+    sleep 3
+    
+    # Verify container is running
+    if docker ps --filter "name=$container_name" --filter "status=running" | grep $container_name > /dev/null; then
+        echo "✅ Container health check passed"
+    else
+        echo "❌ Container health check failed - container not running"
+        echo "Container status:"
+        docker ps -a --filter "name=$container_name"
+        echo "Container logs:"
+        docker logs $container_name
+        docker rm -f $container_name >/dev/null 2>&1
+        exit 1
+    fi
+    
+    # Clean up
+    docker rm -f $container_name >/dev/null 2>&1
+else
+    echo "❌ Failed to start container for health check"
+    echo "Container logs:"
+    docker logs $container_name 2>/dev/null || echo "No logs available"
+    docker rm -f $container_name >/dev/null 2>&1
+    exit 1
+fi
+
 echo ""
 echo "🎉 All tests passed! cfg2html-docker is ready for use."
 echo ""
