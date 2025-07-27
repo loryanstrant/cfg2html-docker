@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update package list and install required packages
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     openssh-client \
@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y \
     procps \
     sudo \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create user for running the application
 RUN groupadd -g 1000 cfg2html && \
@@ -28,7 +29,7 @@ RUN wget --no-check-certificate https://github.com/cfg2html/cfg2html/archive/ref
     tar -xzf /tmp/cfg2html.tar.gz -C /tmp && \
     find /tmp/cfg2html-master -name "cfg2html" -type f -exec cp {} /usr/local/bin/ \; && \
     chmod +x /usr/local/bin/cfg2html && \
-    rm -rf /tmp/cfg2html*
+    rm -rf /tmp/cfg2html* /tmp/*
 
 # Create directories
 RUN mkdir -p /app/scripts /app/output /var/log/cfg2html /home/cfg2html/.ssh && \
@@ -53,6 +54,10 @@ ENV LOG_LEVEL=INFO
 
 # Expose volume for output
 VOLUME ["/app/output"]
+
+# Health check to ensure container is running properly
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+  CMD pgrep -f entrypoint.sh > /dev/null || exit 1
 
 # Set working directory
 WORKDIR /app
