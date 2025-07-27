@@ -66,7 +66,61 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           docker build -t test-image .
-          docker run --rm -e HOSTS="127.0.0.1" -e RUN_AT_STARTUP="false" test-image echo "Container starts successfully"
+          
+          echo "=== Test 1: Negative test - Container should fail without HOSTS ==="
+          if timeout 10 docker run --rm test-image 2>&1 | grep -q "HOSTS environment variable is required"; then
+            echo "✅ Container correctly fails when HOSTS is missing"
+          else
+            echo "❌ Container did not fail properly when HOSTS is missing"
+            exit 1
+          fi
+          
+          echo "=== Test 2: Positive test - Container should start with HOSTS ==="
+          # Test that container starts successfully with HOSTS set
+          CONTAINER_ID=$(docker run -d -e HOSTS="dummy:22:user:pass" -e RUN_AT_STARTUP="false" test-image)
+          
+          # Wait a few seconds for startup
+          sleep 5
+          
+          # Check if container is running
+          if docker ps -q --filter "id=$CONTAINER_ID" | grep -q .; then
+            echo "✅ Container started successfully with HOSTS set"
+            # Get logs for verification
+            echo "Container logs:"
+            docker logs $CONTAINER_ID 2>&1 | head -10
+          else
+            echo "❌ Container failed to start with HOSTS set"
+            echo "Container logs:"
+            docker logs $CONTAINER_ID 2>&1
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop $CONTAINER_ID >/dev/null 2>&1 || true
+          docker rm $CONTAINER_ID >/dev/null 2>&1 || true
+          
+          echo "=== Test 3: Health check test ==="
+          # Quick health check - verify container can start without errors
+          HEALTH_CONTAINER_ID=$(docker run -d -e HOSTS="dummy:22:user:pass" -e RUN_AT_STARTUP="false" test-image)
+          sleep 3
+          
+          # Check container is running and logs show successful startup
+          if docker ps -q --filter "id=$HEALTH_CONTAINER_ID" | grep -q . && docker logs $HEALTH_CONTAINER_ID 2>&1 | grep -q "Container started successfully"; then
+            echo "✅ Container health check passed"
+          else
+            echo "❌ Container health check failed"
+            echo "Container logs:"
+            docker logs $HEALTH_CONTAINER_ID 2>&1
+            exit 1
+          fi
+          
+          # Cleanup health check container
+          docker stop $HEALTH_CONTAINER_ID >/dev/null 2>&1 || true
+          docker rm $HEALTH_CONTAINER_ID >/dev/null 2>&1 || true
+          
+          # Final cleanup
+          docker rmi test-image >/dev/null 2>&1 || true
+          echo "✅ All tests passed and cleanup completed"
 
   security-scan:
     runs-on: ubuntu-latest
