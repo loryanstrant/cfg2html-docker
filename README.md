@@ -370,6 +370,10 @@ You can manually trigger the build workflow:
    - `staging`: For staging deployments  
    - `production`: For production releases
 
+### Repository Setup
+
+For detailed setup instructions including GHCR configuration, package visibility settings, and troubleshooting, see the [Setup Guide](docs/SETUP.md).
+
 ### Running Tests Locally
 
 ```bash
